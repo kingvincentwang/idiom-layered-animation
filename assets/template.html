@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>朝三暮四</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;900&display=swap" rel="stylesheet">
+<style>
+  :root{ --bg:#16120f; --paper:#f1ebe0; --ink:#2a2118; --accent:#c9922e; --red:#a8322a; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg); color:var(--paper); font-family:"Noto Serif TC","Microsoft JhengHei",serif;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; padding:16px; gap:14px; min-height:100vh}
+  .stage{position:relative; width:min(100%, calc((100vh - 120px) * 1376 / 768), 1280px); aspect-ratio:1376/768;
+    overflow:hidden; border-radius:10px; background:#000; box-shadow:0 10px 40px rgba(0,0,0,.6)}
+  .stage:fullscreen{width:100vw;max-width:none;border-radius:0;aspect-ratio:auto;height:100vh}
+  .stage:fullscreen .cam{inset:0;margin:auto;width:min(100vw,100vh*1376/768);height:auto;aspect-ratio:1376/768}
+  .cam{position:absolute; inset:0; will-change:transform}
+  .cam .bg{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:0}
+  .cam .bg.on{opacity:1}
+  .bg.morning{filter:brightness(1.08) saturate(1.05) hue-rotate(-6deg)}
+  .bg.dusk{filter:sepia(.25) saturate(1.25) brightness(.95)}
+
+  /* 角色：actor（位置、走位）> body（呼吸、跳）> pose（姿勢）> 身體圖＋head（頭）> mouth */
+  .actor{position:absolute; transform-origin:50% 100%; display:none}
+  .actor.show{display:block}
+  .actor .body{position:absolute; inset:0; transform-origin:50% 100%}
+  .actor .shadow{position:absolute; left:18%; right:18%; bottom:-2%; height:5%; border-radius:50%; background:rgba(60,40,20,.28); filter:blur(3px)}
+  .pose{position:absolute; left:50%; bottom:0; height:100%; transform:translateX(-50%); opacity:0}
+  .pose.on{opacity:1}
+  .actor.flip .pose{transform:translateX(-50%) scaleX(-1)}
+  .pose > img{display:block; height:100%; width:auto}
+  .head{position:absolute; inset:0}
+  .head img{display:block; height:100%; width:auto}
+  .breathe .body{animation:breathe 2.6s ease-in-out infinite}
+  @keyframes breathe{50%{transform:scaleY(1.012) scaleX(.995)}}
+  .hopping .body{animation:hop .36s cubic-bezier(.3,0,.5,1) infinite alternate}
+  @keyframes hop{from{transform:translateY(0) scaleY(.95) scaleX(1.03)}to{transform:translateY(-10%) scaleY(1.04) scaleX(.98)}}
+  .stomp .body{animation:stomp .28s ease-in-out infinite alternate}
+  @keyframes stomp{from{transform:translateY(0) rotate(-2.5deg) scaleY(.97)}to{transform:translateY(-6%) rotate(2.5deg) scaleY(1.02)}}
+  .giggle .body{animation:giggle .22s ease-in-out infinite alternate}
+  @keyframes giggle{from{transform:translateY(0) rotate(-1deg)}to{transform:translateY(-1.5%) rotate(1deg)}}
+
+  /* 整張插圖的特寫鏡頭（第四幕），也有自己的嘴 */
+  .plate{position:absolute; inset:0; display:none}
+  .plate.show{display:block}
+  .plate img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover}
+
+  .mouth{position:absolute; transform:translate(-50%,0); pointer-events:none; opacity:0}
+  .mouth svg{display:block; width:100%; height:100%; overflow:visible}
+
+  .vignette{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.45) 100%)}
+  .cut{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none}
+  .dark{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity 1.2s}
+  .speed{position:absolute;inset:0;pointer-events:none;opacity:0;
+    background:repeating-linear-gradient(90deg, transparent 0 40px, rgba(255,255,255,.35) 40px 42px)}
+  .label{position:absolute; top:3.5%; left:3%; padding:.35em .9em; font-size:clamp(12px,1.8vw,20px);
+    background:rgba(20,15,10,.72); border-left:4px solid var(--accent); border-radius:4px; opacity:0; transform:translateX(-12px); transition:.6s}
+  .label.on{opacity:1; transform:none}
+  .subs{position:absolute; left:0; right:0; bottom:0; padding:5% 6% 3.2%; background:linear-gradient(transparent, rgba(0,0,0,.8) 45%);
+    text-align:center; font-size:clamp(14px,2.4vw,28px); line-height:1.5; font-weight:500; text-shadow:0 2px 4px #000;
+    min-height:22%; display:flex; align-items:flex-end; justify-content:center; transition:opacity .4s}
+  .subs.hide{opacity:0}
+  .subs .jugong{color:#ffd9a0} .subs .monkey{color:#ffab80}
+  .bubble{position:absolute; padding:.4em .8em; font-weight:900; color:var(--ink); background:#fffdf5; border:3px solid var(--ink);
+    border-radius:999px; font-size:clamp(14px,2.6vw,36px); white-space:nowrap; transform:translate(-50%,-50%) scale(0);
+    transition:transform .35s cubic-bezier(.3,1.8,.5,1); pointer-events:none}
+  .bubble.on{transform:translate(-50%,-50%) scale(1)}
+  .bubble.shout{background:var(--red); color:#fff; border-color:#fff; border-radius:12px}
+  .stamp{position:absolute; left:50%; top:42%; transform:translate(-50%,-50%) scale(0); font-size:clamp(40px,10vw,140px); font-weight:900;
+    color:#fff3c4; letter-spacing:.08em; -webkit-text-stroke:3px #5a1a10; text-shadow:0 0 30px rgba(255,120,80,.8), 6px 6px 0 #5a1a10;
+    pointer-events:none; opacity:0; white-space:nowrap}
+
+  .card{position:absolute; inset:0; background:var(--paper); color:var(--ink); display:flex; align-items:center; justify-content:center; gap:3%;
+    transition:opacity .8s; padding:4%}
+  .card.hidden{opacity:0; pointer-events:none}
+  .card img{mix-blend-mode:multiply; height:80%; width:26%; object-fit:contain; flex:none}
+  .card .txt{text-align:center; flex:1; min-width:0}
+  .card h1{font-size:clamp(36px,8vw,108px); margin:0; font-weight:900; letter-spacing:.12em; line-height:1.1}
+  .card h1 small{display:block;font-size:.22em;letter-spacing:.3em;font-weight:500;color:#7a6650;margin-top:.6em}
+  .card p{font-size:clamp(13px,1.9vw,24px); line-height:1.7; margin:.6em 0}
+  .card .moral{border-top:2px solid var(--accent); border-bottom:2px solid var(--accent); padding:.6em 0}
+  .card .zhuyin{color:#7a6650; font-size:clamp(12px,1.6vw,20px); letter-spacing:.2em}
+  .btn-play{margin-top:1em; font:inherit; font-size:clamp(16px,2.4vw,28px); font-weight:900; background:var(--red); color:#fff; border:0;
+    border-radius:999px; padding:.5em 1.6em; cursor:pointer; box-shadow:0 4px 0 #5e1b15}
+  .controls{display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:center; width:min(100%,1280px)}
+  .controls button{font:inherit; font-size:15px; background:#2e271f; color:var(--paper); border:1px solid #4a3f33; border-radius:8px; padding:8px 14px; cursor:pointer}
+  .controls button:hover{background:#3d3428}
+  .controls button.active{background:var(--accent); color:#1b1712; border-color:var(--accent)}
+  .dots{display:flex; gap:6px} .dots button{min-width:44px} .spacer{flex:1}
+  @media (max-width:640px){ .spacer{display:none} .controls button{padding:7px 10px;font-size:14px} .card img{display:none} }
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  <div class="cam" id="cam">
+    <img class="bg" id="bgYard" src="layers/bg3.jpg" alt="小院">
+    <img class="bg" id="bgBarn" src="layers/bg2.jpg" alt="穀倉">
+
+    <!-- 猴群：happy＝開心、angry＝生氣 -->
+    <div class="actor" id="monkeys"><div class="body"><div class="shadow"></div>
+      <div class="pose" data-pose="happy" data-ar="1.985"><img src="layers/mhappy.png" alt="開心的猴群"></div>
+      <div class="pose" data-pose="angry" data-ar="2.233"><img src="layers/mangry.png" alt="生氣的猴群"></div>
+    </div></div>
+
+    <!-- 狙公：idle 垂手／three 比三／four 比四／worried 抓頭／laugh 掩嘴笑 -->
+    <div class="actor" id="jugong"><div class="body"><div class="shadow"></div>
+      <div class="pose" data-pose="idle" data-ar=".547"><img src="layers/jugong2_body.png" alt="狙公">
+        <div class="head" data-neck=".345"><img src="layers/jugong2_head.png" alt=""><div class="mouth" data-x=".5" data-y=".309" data-w=".10" data-h=".028"></div></div></div>
+      <div class="pose" data-pose="three" data-ar=".595"><img src="layers/jugong_body.png" alt="狙公比三">
+        <div class="head" data-neck=".343"><img src="layers/jugong_head.png" alt=""><div class="mouth" data-x=".466" data-y=".303" data-w=".10" data-h=".028"></div></div></div>
+      <div class="pose" data-pose="four" data-ar=".625"><img src="layers/jugong4_body.png" alt="狙公比四">
+        <div class="head" data-neck=".343"><img src="layers/jugong4_head.png" alt=""><div class="mouth" data-x=".437" data-y=".306" data-w=".10" data-h=".028"></div></div></div>
+      <div class="pose" data-pose="worried" data-ar=".580"><img src="layers/jugongw.png" alt="狙公發愁">
+        <div class="mouth" data-x=".471" data-y=".313" data-w=".09" data-h=".025"></div></div>
+      <div class="pose" data-pose="laugh" data-ar=".529"><img src="layers/jugongl.png" alt="狙公偷笑"></div>
+    </div></div>
+
+    <!-- 猴王：angry 生氣／cheer 歡呼／curious 疑惑 -->
+    <div class="actor" id="king"><div class="body"><div class="shadow"></div>
+      <div class="pose" data-pose="angry" data-ar=".558"><img src="layers/kingA_body.png" alt="猴王">
+        <div class="head" data-neck=".385"><img src="layers/kingA_head.png" alt=""><div class="mouth" data-x=".80" data-y=".366" data-w=".10" data-h=".03"></div></div></div>
+      <div class="pose" data-pose="cheer" data-ar=".763"><img src="layers/kingC.png" alt="猴王歡呼">
+        <div class="mouth" data-x=".518" data-y=".366" data-w=".13" data-h=".038"></div></div>
+      <div class="pose" data-pose="curious" data-ar=".582"><img src="layers/kingQ.png" alt="猴王歪頭疑惑"></div>
+    </div></div>
+
+    <!-- 第四幕特寫：整張插圖 -->
+    <div class="plate" id="plate"><img src="images/scene4.jpg" alt="狙公摸鬍子比四根手指的特寫">
+      <div class="mouth" data-x=".500" data-y=".566" data-w=".060" data-h=".034"></div></div>
+  </div>
+  <div class="vignette"></div>
+  <div class="dark" id="dark"></div>
+  <div class="speed" id="speed"></div>
+  <div class="cut" id="cut"></div>
+  <div class="stamp" id="stamp"></div>
+  <div class="bubble" id="bubble"></div>
+  <div class="label" id="label"></div>
+  <div class="subs" id="subs"></div>
+
+  <div class="card" id="titleCard">
+    <img src="layers/jugong2.png" alt="">
+    <div class="txt">
+      <h1>朝三暮四<small>成語故事動畫・分層版</small></h1>
+      <div class="zhuyin">ㄓㄠ ㄙㄢ ㄇㄨˋ ㄙˋ</div>
+      <button class="btn-play" id="startBtn">▶ 開始播放</button>
+      <p style="font-size:clamp(11px,1.3vw,15px);color:#7a6650">請打開喇叭，有旁白與音效</p>
+    </div>
+    <img src="layers/kingC.png" alt="">
+  </div>
+
+  <div class="card hidden" id="endCard">
+    <img src="layers/mhappy.png" alt="" style="width:40%;height:auto">
+    <div class="txt">
+      <h1 style="font-size:clamp(30px,6vw,80px)">朝三暮四</h1>
+      <p class="zhuyin">出自《莊子‧齊物論》、《列子‧黃帝》</p>
+      <p class="moral"><b>原意：</b>總數沒變，只換了說法，猴子就從生氣變高興。比喻用花招騙人，或被表面的改變騙了。<br><b>今義：</b>形容人反覆無常、心意一直改變。</p>
+      <p style="font-size:clamp(12px,1.6vw,20px);color:#5c4a38">早上三顆晚上四顆，和早上四顆晚上三顆，<br>一天加起來<b>一樣多</b>嗎？</p>
+      <button class="btn-play" id="replayBtn">↻ 再看一次</button>
+    </div>
+  </div>
+</div>
+
+<div class="controls">
+  <button id="prevBtn">⏮ 上一幕</button>
+  <button id="playBtn">⏸ 暫停</button>
+  <button id="nextBtn">下一幕 ⏭</button>
+  <div class="dots" id="dots"></div>
+  <span class="spacer"></span>
+  <button id="subBtn" class="active">字幕</button>
+  <button id="voiceBtn" class="active">旁白</button>
+  <button id="fsBtn">⛶ 全螢幕</button>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const stage=$('stage'), cam=$('cam'), subs=$('subs'), bubble=$('bubble'), cut=$('cut'), speed=$('speed'), stamp=$('stamp'), dark=$('dark'), label=$('label');
+let runId=0, current=-1, playing=false, voiceOn=true; class Cancel extends Error{}
+const wait=(ms,id=runId)=>new Promise((res,rej)=>setTimeout(()=>id===runId?res():rej(new Cancel()),ms));
+const later=(ms,fn,id=runId)=>wait(ms,id).then(fn);
+
+/* ---------- 角色 ---------- */
+const actors={}, plate=$('plate');
+const MOUTH_SVG=`<svg viewBox="0 0 100 60" preserveAspectRatio="none">
+  <path d="M2,6 Q50,-3 98,6 Q86,60 50,60 Q14,60 2,6Z" fill="#3a0b08"/>
+  <path d="M2,6 Q50,-3 98,6 L98,16 L2,16Z" fill="#f3ead8"/>
+  <ellipse cx="50" cy="56" rx="26" ry="10" fill="#b44b42"/>
+  <path d="M2,6 Q50,-3 98,6 Q86,60 50,60 Q14,60 2,6Z" fill="none" stroke="#b4574e" stroke-opacity=".8" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
+document.querySelectorAll('.mouth').forEach(m=>{ Object.assign(m.style,{left:m.dataset.x*100+'%', top:m.dataset.y*100+'%', width:m.dataset.w*100+'%', height:'0%'}); m.innerHTML=MOUTH_SVG; });
+document.querySelectorAll('.head').forEach(hd=>hd.style.transformOrigin=`50% ${hd.dataset.neck*100}%`);
+document.querySelectorAll('.actor').forEach(a=>actors[a.id]=a);
+
+/* 擺位：x＝腳底中心、base＝腳底高度、h＝身高（都是畫面比例） */
+function place(id,x,base,h,poseName,{flip=false}={}){
+  const a=actors[id]; a.classList.add('show'); a.classList.toggle('flip',flip);
+  a.getAnimations().forEach(an=>an.cancel());
+  a.querySelectorAll('.pose').forEach(p=>p.classList.toggle('on',p.dataset.pose===poseName));
+  const ar=+a.querySelector('.pose.on').dataset.ar, w=h*ar*768/1376;
+  Object.assign(a.style,{height:h*100+'%', width:w*100+'%', left:(x-w/2)*100+'%', bottom:(1-base)*100+'%'});
+  setState(id,'breathe');
+}
+function hideAll(){ Object.values(actors).forEach(a=>a.classList.remove('show')); plate.classList.remove('show'); }
+const poseEl=id=>id==='plate'?plate:actors[id].querySelector('.pose.on');
+const headEl=id=>id==='plate'?null:(poseEl(id).querySelector('.head')||null);
+function setState(id,...cls){ const a=actors[id]; a.classList.remove('breathe','hopping','stomp','giggle'); cls.forEach(c=>a.classList.add(c)); }
+function setPose(id,name){   // 換姿勢＋彈一下
+  const a=actors[id], next=a.querySelector(`.pose[data-pose="${name}"]`); if(!next||next.classList.contains('on')) return;
+  a.querySelectorAll('.pose').forEach(p=>p.classList.toggle('on',p===next));
+  a.querySelector('.body').animate([{transform:'scale(1.04,.96)'},{transform:'scale(.98,1.03)'},{transform:'scale(1)'}],{duration:260,easing:'ease-out',composite:'add'});
+}
+function tilt(id,deg,ms=400){ const h=headEl(id)||poseEl(id); h.animate([{transform:'rotate(0)'},{transform:`rotate(${deg}deg)`}],{duration:ms,easing:'ease-out',fill:'forwards',composite:'add'}); }
+let talkAnim=null;
+function talkHead(id,on,angry=false){
+  if(talkAnim){ talkAnim.cancel(); talkAnim=null; }
+  if(!on||id==='plate') return;
+  const el=headEl(id)||poseEl(id), small=!headEl(id);
+  const k=angry?[{transform:'rotate(0)'},{transform:'rotate(-6deg) translateY(-1%)'},{transform:'rotate(5deg)'},{transform:'rotate(0)'}]
+               :[{transform:'rotate(0) translateY(0)'},{transform:`rotate(${small?-1:-2.5}deg) translateY(.8%)`},{transform:`rotate(${small?1:1.5}deg) translateY(-.3%)`},{transform:'rotate(0) translateY(0)'}];
+  talkAnim=el.animate(k,{duration:angry?420:900,iterations:Infinity,easing:'ease-in-out',composite:'add'});
+}
+function moveActor(id,from,to,ms,ease='linear'){ return actors[id].animate([{transform:from},{transform:to}],{duration:ms,easing:ease,fill:'forwards'}); }
+function walkIn(id,fromX,ms){
+  moveActor(id,`translateX(${fromX}%)`,'translateX(0)',ms,'cubic-bezier(.25,.6,.4,1)');
+  actors[id].querySelector('.body').animate([{transform:'translateY(0) rotate(0)'},{transform:'translateY(-3%) rotate(2deg)'},{transform:'translateY(0) rotate(0)'},{transform:'translateY(-3%) rotate(-2deg)'},{transform:'translateY(0) rotate(0)'}],
+    {duration:560,iterations:Math.max(1,Math.round(ms/560)),composite:'add'});
+}
+function setBg(id,cls=''){ document.querySelectorAll('.cam .bg').forEach(b=>{ b.classList.toggle('on',b.id===id); }); const b=$(id); b.classList.remove('morning','dusk'); if(cls) b.classList.add(cls); }
+
+/* ---------- 鏡頭 ---------- */
+let camState={x:.5,y:.5,s:1};
+function camTransform({x,y,s}){ const lim=(s-1)/2*100;
+  return `translate(${Math.max(-lim,Math.min(lim,(.5-x)*s*100))}%,${Math.max(-lim,Math.min(lim,(.5-y)*s*100))}%) scale(${s})`; }
+function camTo(x,y,s,dur=1500,ease='cubic-bezier(.45,0,.25,1)'){ const to={x,y,s};
+  cam.animate([{transform:camTransform(camState)},{transform:camTransform(to)}],{duration:dur,easing:ease,fill:'forwards'}); camState=to; }
+function cutTo(x,y,s){ cut.animate([{opacity:.55},{opacity:0}],{duration:160}); camTo(x,y,s,1); }
+function whip(x,y,s){ speed.animate([{opacity:0},{opacity:1},{opacity:0}],{duration:320}); whoosh(); camTo(x,y,s,320,'cubic-bezier(.7,0,.3,1)'); }
+function shake(dur=900,amp=10){ const k=[]; for(let i=0;i<=12;i++){const a=amp*(1-i/12); k.push({translate:`${(Math.random()*2-1)*a}px ${(Math.random()*2-1)*a}px`});}
+  k[k.length-1]={translate:'0 0'}; stage.animate(k,{duration:dur}); }
+function showBubble(t,x,y,cls=''){ bubble.className='bubble '+cls; bubble.textContent=t; bubble.style.left=x*100+'%'; bubble.style.top=y*100+'%'; requestAnimationFrame(()=>bubble.classList.add('on')); }
+const hideBubble=()=>bubble.classList.remove('on');
+function stampText(t){ stamp.textContent=t;
+  stamp.animate([{opacity:0,transform:'translate(-50%,-50%) scale(.3) rotate(-8deg)'},{opacity:1,transform:'translate(-50%,-50%) scale(1.15) rotate(-4deg)',offset:.15},
+    {opacity:1,transform:'translate(-50%,-50%) scale(1) rotate(-3deg)',offset:.8},{opacity:0,transform:'translate(-50%,-50%) scale(1.3) rotate(-3deg)'}],{duration:2400,fill:'forwards'}); }
+
+/* ---------- 語音＋口形 ---------- */
+let zhVoice=null; const pickVoice=()=>{ const v=speechSynthesis.getVoices(); zhVoice=v.find(x=>/zh[-_]TW/i.test(x.lang))||v.find(x=>/zh[-_]HK/i.test(x.lang))||v.find(x=>/^zh/i.test(x.lang))||null; };
+if('speechSynthesis' in window){ pickVoice(); speechSynthesis.onvoiceschanged=pickVoice; }
+const VOICES={narr:{rate:.92,pitch:1,name:''}, jugong:{rate:.86,pitch:.8,name:'狙公'}, monkey:{rate:1.3,pitch:1.75,name:'猴王'}};
+const PUNCT=/[，。！？、：；「」…\s]/;
+let lip=null;
+function lipStart(actorId,text,rate){ lipStop(); const m=poseEl(actorId).querySelector('.mouth'); if(!m) return;
+  lip={m,text,ms:1000/(4.3*rate),base:performance.now(),idx:0,amps:[...text].map(()=>.7+Math.random()*.3)};
+  const tick=()=>{ if(!lip) return; const f=lip.idx+(performance.now()-lip.base)/lip.ms, i=Math.floor(f), ch=lip.text[i];
+    const o=(i<lip.text.length&&ch&&!PUNCT.test(ch))?Math.pow(Math.sin(Math.PI*(f-i)),.6)*lip.amps[i]:0;
+    lip.m.style.opacity=o>.08?1:0; lip.m.style.height=(lip.m.dataset.h*o*100)+'%'; lip.raf=requestAnimationFrame(tick); };
+  lip.raf=requestAnimationFrame(tick); }
+function lipStop(){ if(lip){ cancelAnimationFrame(lip.raf); lip.m.style.opacity=0; lip=null; } }
+function say(text,who='narr',actorId=null,angry=false){
+  const id=runId, v=VOICES[who];
+  subs.innerHTML=v.name?`<span class="${who}">${v.name}：「${text}」</span>`:text;
+  const est=Math.max(1500,text.length*260+500);
+  const begin=()=>{ if(actorId){ lipStart(actorId,text,v.rate); talkHead(actorId,true,angry); } };
+  const done=()=>{ lipStop(); talkHead(null,false); };
+  if(!voiceOn||!('speechSynthesis' in window)){ begin(); return wait(est,id).finally(done); }
+  return new Promise((res,rej)=>{ const u=new SpeechSynthesisUtterance(text);
+    if(zhVoice) u.voice=zhVoice; u.lang=zhVoice?zhVoice.lang:'zh-TW'; u.rate=v.rate; u.pitch=v.pitch;
+    u.onstart=begin; if(actorId) u.onboundary=e=>{ if(lip){ lip.base=performance.now(); lip.idx=e.charIndex; } };
+    let fin=false; const t0=performance.now();
+    const finish=()=>{ if(fin) return; fin=true; clearTimeout(t); done();
+      setTimeout(()=>id===runId?res():rej(new Cancel()), Math.max(250,est*.75-(performance.now()-t0))); };
+    const t=setTimeout(finish,est*2.2+2000); u.onend=finish; u.onerror=finish; speechSynthesis.speak(u); });
+}
+
+/* ---------- 音效 ---------- */
+let ac=null,master,bus,noiseBuf;
+function initAudio(){ if(ac) return; ac=new (window.AudioContext||window.webkitAudioContext)(); master=ac.createDynamicsCompressor(); master.connect(ac.destination);
+  noiseBuf=ac.createBuffer(1,ac.sampleRate,ac.sampleRate); const d=noiseBuf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1; }
+function newBus(){ if(!ac) return; if(bus){ const o=bus; o.gain.setTargetAtTime(0,ac.currentTime,.15); setTimeout(()=>o.disconnect(),800); } bus=ac.createGain(); bus.connect(master); }
+const now=()=>ac.currentTime;
+function tone(t,f,vol,dur,type='sine'){ const o=ac.createOscillator(),g=ac.createGain(); o.type=type; o.frequency.value=f;
+  g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+.005); g.gain.exponentialRampToValueAtTime(.0001,t+dur); o.connect(g); g.connect(bus); o.start(t); o.stop(t+dur+.05); }
+function nz(t,dur,f,vol,type='lowpass'){ const s=ac.createBufferSource(),fl=ac.createBiquadFilter(),g=ac.createGain(); s.buffer=noiseBuf; s.loop=true; fl.type=type; fl.frequency.value=f;
+  g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(.0001,t+dur); s.connect(fl); fl.connect(g); g.connect(bus); s.start(t); s.stop(t+dur+.02); return fl; }
+function steps(start,count,gap=.28){ for(let i=0;i<count;i++) nz(now()+start+i*gap,.08,500,.18); }
+function chatter(start,dur,vol=.06){ let t=now()+start; while(t<now()+start+dur){ const f=900+Math.random()*700,o=ac.createOscillator(),g=ac.createGain();
+  o.type='triangle'; o.frequency.setValueAtTime(f,t); o.frequency.exponentialRampToValueAtTime(f*1.6,t+.06);
+  g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+.01); g.gain.exponentialRampToValueAtTime(.0001,t+.14);
+  o.connect(g); g.connect(bus); o.start(t); o.stop(t+.16); t+=.06+Math.random()*.18; } }
+function birds(dur){ let t=now()+.3; while(t<now()+dur){ const f=2400+Math.random()*1200;
+  for(let k=0;k<2+Math.floor(Math.random()*3);k++){ const s=t+k*.11,o=ac.createOscillator(),g=ac.createGain(); o.frequency.setValueAtTime(f,s); o.frequency.exponentialRampToValueAtTime(f*1.35,s+.07);
+    g.gain.setValueAtTime(0,s); g.gain.linearRampToValueAtTime(.04,s+.01); g.gain.exponentialRampToValueAtTime(.0001,s+.09); o.connect(g); g.connect(bus); o.start(s); o.stop(s+.1); }
+  t+=.8+Math.random()*1.6; } }
+function chime(start,notes){ notes.forEach(([dt,f])=>{ const t=now()+start+dt; tone(t,f,.22,2.2); tone(t,f*2.76,.07,1); }); }
+function plop(start,count){ for(let i=0;i<count;i++) tone(now()+start+i*.45,620-i*25,.12,.12); }
+function whoosh(){ if(!ac) return; const t=now(), fl=nz(t,.25,400,.14,'bandpass'); fl.frequency.setValueAtTime(400,t); fl.frequency.exponentialRampToValueAtTime(2500,t+.2); }
+function boing(){ const t=now(),o=ac.createOscillator(),g=ac.createGain(); o.frequency.setValueAtTime(300,t); o.frequency.exponentialRampToValueAtTime(900,t+.2);
+  g.gain.setValueAtTime(.1,t); g.gain.exponentialRampToValueAtTime(.0001,t+.3); o.connect(g); g.connect(bus); o.start(t); o.stop(t+.35); }
+function thud(){ const t=now(); tone(t,90,.35,.25); nz(t,.08,300,.2); }
+function sting(start){ const t=now()+start; [55,58.3,82.4].forEach(f=>tone(t,f,.15,3,'sawtooth')); }
+function drum(start,vol=.6){ const t=now()+start,o=ac.createOscillator(),g=ac.createGain(); o.frequency.setValueAtTime(120,t); o.frequency.exponentialRampToValueAtTime(45,t+.4);
+  g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(.0001,t+.9); o.connect(g); g.connect(bus); o.start(t); o.stop(t+1); }
+
+/* ---------- 五幕劇本（每 2～3 秒一個鏡頭） ---------- */
+const SCENES=[
+  { title:'第一幕・愛猴子的狙公', async run(id){
+      hideAll(); setBg('bgYard','morning'); newBus(); birds(18);
+      place('jugong',.36,.95,.6,'idle'); place('monkeys',.77,.97,.33,'happy'); place('king',.55,.97,.44,'cheer');
+      cutTo(.5,.45,1.15); chime(.3,[[0,392],[.4,440],[.8,523],[1.2,440]]);
+      walkIn('jugong',-220,2800); steps(0,10); camTo(.45,.5,1.05,6000);
+      await say('從前，宋國有一位老爺爺，大家叫他「狙公」。');
+      whip(.72,.62,1.6); setState('monkeys','hopping'); setState('king','hopping'); chatter(0,3,.05);
+      await say('他非常喜歡猴子，家裡養了一大群，');
+      setState('monkeys','breathe'); setState('king','breathe');
+      cutTo(.36,.45,2); tilt('jugong',-4);
+      showBubble('吱吱～',.7,.18);
+      await say('時間久了，他還聽得懂猴子的心意呢！');
+      hideBubble(); await wait(300,id);
+  }},
+  { title:'第二幕・橡實不夠了', async run(id){
+      hideAll(); setBg('bgBarn'); newBus(); sting(.2);
+      place('jugong',.3,.95,.62,'worried'); place('monkeys',-.08,.99,.32,'happy');
+      cutTo(.45,.5,1.05);
+      await say('可是，狙公家裡越來越窮，');
+      cutTo(.6,.65,2); plop(.2,2);
+      await say('袋子裡的橡實，快要不夠吃了。');
+      cutTo(.3,.42,2); setState('jugong','breathe');
+      showBubble('唉……',.5,.14);
+      await say('得讓猴子們少吃一點才行。','jugong','jugong');
+      hideBubble();
+      whip(.08,.66,2); chatter(0,1,.04);
+      showBubble('？',.2,.2);
+      await say('門口的猴子們，好奇地探頭偷看。');
+      hideBubble(); await wait(300,id);
+  }},
+  { title:'第三幕・早上三顆？', async run(id){
+      hideAll(); setBg('bgYard'); newBus();
+      place('jugong',.25,.95,.62,'idle'); place('monkeys',.78,.97,.34,'happy'); place('king',.52,.97,.46,'cheer',{flip:true});   // 翻面，生氣時面向狙公   // 一開始還很開心，聽到「早上三顆」才生氣
+      cutTo(.32,.55,1.25); walkIn('jugong',-170,2400); steps(0,8); camTo(.4,.55,1.15,2400);
+      await wait(2100,id);
+      whip(.7,.55,1.35);
+      moveActor('monkeys','translateX(90%)','translateX(0)',1300,'ease-out'); moveActor('king','translateX(170%)','translateX(0)',1500,'ease-out');
+      setState('monkeys','hopping'); setState('king','hopping'); chatter(0,1.8,.05);
+      await wait(1600,id); setState('monkeys','breathe'); setState('king','breathe');
+      cutTo(.5,.55,1.03); tilt('king',-6);
+      await say('狙公把猴子們叫過來，伸出三根手指說：');
+      cutTo(.27,.45,1.85); setPose('jugong','three'); boing();
+      showBubble('早上三顆，晚上四顆',.5,.12); plop(.6,3);
+      camTo(.27,.4,2.1,3800);
+      await Promise.all([
+        say('以後每天早上給你們三顆橡實，晚上四顆，好不好？','jugong','jugong'),
+        later(2600,()=>cutTo(.72,.55,1.7),id).then(()=>later(1300,()=>cutTo(.27,.4,2.1),id))
+      ]);
+      hideBubble();
+      setPose('king','angry'); setPose('monkeys','angry'); whip(.49,.64,2.1); setState('king','stomp'); chatter(0,5,.08); shake(900,9); thud();
+      showBubble('不要！不要！',.66,.14,'shout');
+      await say('不要！不要！早上三顆太少了！','monkey','king',true);
+      hideBubble();
+      cutTo(.62,.55,1.25); setState('monkeys','hopping'); chatter(0,4,.07); camTo(.45,.55,1.25,3500,'linear');
+      await say('猴子們一聽，全都氣得跳起來，吱吱亂叫。');
+      cutTo(.25,.5,2); setState('monkeys','breathe'); setState('king','breathe'); setPose('jugong','idle');
+      actors.jugong.querySelector('.body').animate([{transform:'rotate(0)'},{transform:'rotate(-6deg) translateX(-3%)'},{transform:'rotate(-4deg) translateX(-2%)'}],{duration:500,fill:'forwards',composite:'add'});
+      tilt('jugong',6,300); showBubble('哎呀……',.32,.14);
+      await wait(1600,id); hideBubble();
+  }},
+  { title:'第四幕・早上四顆！', async run(id){
+      hideAll(); setBg('bgYard'); newBus();
+      plate.classList.add('show'); cutTo(.5,.5,1.1); boing();
+      await say('狙公摸摸鬍子，想了一想，笑咪咪地說：');
+      camTo(.5,.5,1.5,4500);
+      showBubble('早上四顆，晚上三顆',.5,.12); plop(.4,4);
+      await say('那改成早上四顆，晚上三顆，總可以了吧？','jugong','plate');
+      hideBubble();
+      plate.classList.remove('show');
+      place('jugong',.3,.95,.62,'four'); place('king',.6,.97,.46,'curious'); place('monkeys',.84,.97,.34,'angry');
+      cutTo(.6,.6,1.6); tilt('king',8,500);
+      await say('猴子們歪著頭，想了一想……');
+      await wait(300,id);
+  }},
+  { title:'第五幕・猴子樂翻了', async run(id){
+      hideAll(); setBg('bgYard','dusk'); newBus();
+      place('king',.3,.97,.46,'cheer'); place('monkeys',.6,.97,.34,'happy'); place('jugong',.86,.95,.6,'laugh');
+      chime(.2,[[0,523],[.15,587],[.3,659],[.45,784]]);
+      cutTo(.32,.5,1.8); setState('king','hopping'); chatter(0,9,.06);
+      showBubble('好耶！',.3,.12);
+      await say('好耶！早上有四顆了！','monkey','king');
+      hideBubble();
+      whip(.6,.6,1.5); setState('monkeys','hopping');
+      await say('猴子們高興得跳起來，拍手又跳舞。');
+      cutTo(.86,.42,2); setState('jugong','giggle');
+      showBubble('嘻嘻……',.6,.14);
+      await say('狙公在樹旁，偷偷地笑了。');
+      hideBubble();
+      cutTo(.5,.55,1.02);
+      stampText('3＋4＝4＋3'); drum(0,.5);
+      await say('可是，三加四和四加三，一天加起來，不是一樣多嗎？');
+      dark.style.opacity=.8; await wait(700,id);
+      stampText('朝三暮四'); drum(0,.8);
+      await say('這就是成語「朝三暮四」的故事。');
+      await wait(600,id);
+  }}
+];
+
+/* ---------- 播放控制 ---------- */
+const dots=$('dots');
+SCENES.forEach((s,i)=>{ const b=document.createElement('button'); b.textContent=['一','二','三','四','五'][i]; b.title=s.title; b.onclick=()=>goto(i); dots.appendChild(b); });
+function setLabel(t){ label.classList.remove('on'); label.textContent=t; requestAnimationFrame(()=>label.classList.add('on')); }
+function resetFx(){ if('speechSynthesis' in window) speechSynthesis.cancel(); lipStop(); talkHead(null,false); hideBubble(); subs.innerHTML=''; dark.style.opacity=0;
+  stamp.getAnimations().forEach(a=>a.cancel());
+  Object.values(actors).forEach(a=>a.getAnimations({subtree:true}).forEach(an=>{ if(!(an instanceof CSSAnimation)) an.cancel(); })); }
+async function goto(i){
+  const id=++runId; resetFx(); initAudio(); if(ac.state==='suspended') ac.resume();
+  $('titleCard').classList.add('hidden'); $('endCard').classList.add('hidden');
+  playing=true; $('playBtn').textContent='⏸ 暫停';
+  if(i>=SCENES.length) return ending();
+  current=i; [...dots.children].forEach((b,k)=>b.classList.toggle('active',k===i)); setLabel(SCENES[i].title);
+  try{ await SCENES[i].run(id); if(id===runId) goto(i+1); }catch(e){ if(!(e instanceof Cancel)) console.error(e); }
+}
+function ending(){
+  current=SCENES.length; playing=false; newBus(); label.classList.remove('on'); [...dots.children].forEach(b=>b.classList.remove('active'));
+  $('endCard').classList.remove('hidden'); $('playBtn').textContent='▶ 播放'; chime(.2,[[0,294],[.4,330],[.8,392],[1.4,440]]);
+  if(voiceOn&&'speechSynthesis' in window){ const u=new SpeechSynthesisUtterance('朝三暮四，原本是說總數沒有改變，只是換了說法，猴子就被騙得很高興。現在常用來形容一個人反覆無常、心意一直改變。小朋友，早上三顆晚上四顆，和早上四顆晚上三顆，一天加起來一樣多嗎？');
+    if(zhVoice) u.voice=zhVoice; u.lang=zhVoice?zhVoice.lang:'zh-TW'; u.rate=.92; speechSynthesis.speak(u); }
+}
+function pause(){ runId++; resetFx(); if(bus) bus.gain.setTargetAtTime(0,ac.currentTime,.1); cam.getAnimations().forEach(a=>a.pause());
+  playing=false; $('playBtn').textContent='▶ 播放'; subs.innerHTML='（已暫停，按「播放」從這一幕開頭重新開始）'; }
+$('startBtn').onclick=()=>goto(0);
+$('replayBtn').onclick=()=>goto(0);
+$('prevBtn').onclick=()=>goto(Math.max(0,Math.min(current,SCENES.length)-1));
+$('nextBtn').onclick=()=>goto(current+1);
+$('playBtn').onclick=()=>playing?pause():goto(current<0||current>=SCENES.length?0:current);
+$('subBtn').onclick=e=>{ e.target.classList.toggle('active'); subs.classList.toggle('hide'); };
+$('voiceBtn').onclick=e=>{ voiceOn=!voiceOn; e.target.classList.toggle('active',voiceOn); if(!voiceOn) speechSynthesis.cancel(); };
+$('fsBtn').onclick=()=>document.fullscreenElement?document.exitFullscreen():stage.requestFullscreen();
+document.addEventListener('keydown',e=>{ if(e.code==='Space'){ e.preventDefault(); $('playBtn').click(); } if(e.code==='ArrowRight') $('nextBtn').click(); if(e.code==='ArrowLeft') $('prevBtn').click(); });
+</script>
+</body>
+</html>
